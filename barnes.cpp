@@ -40,13 +40,25 @@ struct Particles {
   }
 };
 
+void checkOut(Particles &p, const int &w, const int &h) {
+
+  int n = p.num;
+  for (int i = 0; i < n; i++) {
+    if (p.x[i] + p.size[i] >= w || p.x[i] - p.size[i] <= 0)
+      p.v_x[i] *= -1;
+
+    if (p.y[i] + p.size[i] >= h || p.y[i] - p.size[i] <= 0)
+      p.v_y[i] *= -1;
+  }
+}
+
 int main() {
   std::cout << "Hello!";
 
   int num_particles = 1000;
   Particles particles(num_particles);
 
-  int width = 800, height = 400;
+  int width = 1200, height = 800;
   InitWindow(width, height, "Barnes-Hut Simulation");
 
   // Init particles
@@ -63,7 +75,7 @@ int main() {
     particles.c_g[i] = (rand_x + rand_y) / 2.0f * 255;
     particles.c_b[i] = rand_y * 255;
 
-    particles.size[i] = (rand() / RAND_MAX) * 50.0f;
+    particles.size[i] = (rand() / float(RAND_MAX)) * 5.0f + 2.0f;
   }
 
   while (!WindowShouldClose()) {
@@ -78,12 +90,14 @@ int main() {
       for (int i = 0; i < num_particles; i++) {
         Color pCol = {(unsigned char)particles.c_r[i],
                       (unsigned char)particles.c_g[i],
-                      (unsigned char)particles.c_b[i], 255};
-        DrawPixel(particles.x[i], particles.y[i], pCol);
+                      (unsigned char)particles.c_b[i], 122};
+        DrawCircle(particles.x[i], particles.y[i], particles.size[i], pCol);
 
         particles.x[i] += particles.v_x[i] * dt;
         particles.y[i] += particles.v_y[i] * dt;
       }
+
+      checkOut(particles, width, height);
     }
     EndDrawing();
   }
