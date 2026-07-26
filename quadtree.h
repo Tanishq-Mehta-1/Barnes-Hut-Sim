@@ -31,6 +31,7 @@ struct Particles {
   int *c_r;
   int *c_g;
   int *c_b;
+  float *c_a;
 
   float *size;
   float *mass;
@@ -44,6 +45,7 @@ struct Particles {
     c_r = new int[n];
     c_g = new int[n];
     c_b = new int[n];
+    c_a = new float[n];
     size = new float[n];
     mass = new float[n];
   }
@@ -84,6 +86,8 @@ struct AABB {
     halfDim = 0.f;
   }
 
+  float width() const { return 2 * halfDim; }
+
   bool containsPoint(const vec2 point) {
 
     return (point.x >= center.x - halfDim && point.x <= center.x + halfDim &&
@@ -98,11 +102,13 @@ struct AABB {
 
 struct QuadTree {
 
-  constexpr static int node_capacity = 4;
+  constexpr static int node_capacity = 1;
   AABB boundary;
 
-  int size = 0;
-  int points[node_capacity]; // stores id of the particles
+  int body = -1; // stores id of the particles
+  float total_mass = 0.f;
+  float com_x = 0.f;
+  float com_y = 0.f;
 
   QuadTree *NW;
   QuadTree *NE;
@@ -124,13 +130,28 @@ struct QuadTree {
     if (!boundary.containsPoint(p))
       return false;
 
-    if (size < node_capacity && NW == nullptr) {
-      points[size++] = p_id;
+    float new_mass = total_mass + particles.mass[p_id];
+    com_x =
+        ((com_x * total_mass) + (particles.mass[p_id] * particles.x[p_id])) /
+        new_mass;
+    com_y =
+        ((com_y * total_mass) + (particles.mass[p_id] * particles.y[p_id])) /
+        new_mass;
+    total_mass = new_mass;
+
+    if (body < 0 && NW == nullptr) {
+      body = p_id;
       return true;
     }
 
     if (NW == nullptr) {
       subdivide();
+
+      // adding body somewhere else
+      bool res = NW->insert(body, particles) || NE->insert(body, particles) ||
+                 SW->insert(body, particles) || SE->insert(body, particles);
+
+      body = -1;
     }
 
     return NW->insert(p_id, particles) || NE->insert(p_id, particles) ||
@@ -146,27 +167,52 @@ struct QuadTree {
     SE = new QuadTree(AABB(center.x + new_h, center.y + new_h, new_h));
   }
 
-  void queryRange(AABB Range, std::vector<int> &in_range,
-                  const Particles &particles) {
+  static void calculate_gravity_BH(QuadTree *root, int p_id,
+                                   Particles &particles, const float &theta,
+                                   const float &G, const float &eps,
+                                   const float &dt) {
 
-    if (!boundary.intersectsAABB(Range))
+    // empty quadrant
+    if (!root || root->total_mass == 0)
       return;
 
-    for (int i = 0; i < size; i++) {
-      if (Range.containsPoint(vec2(particles.pos(points[i])))) {
-        in_range.push_back(points[i]);
-      }
+    // leaf node
+    if (root->body != -1) {
+      if (p_id == root->body)
+        return;
+
+      float dx = particles.x[root->body] - particles.x[p_id];
+      float dy = particles.y[root->body] - particles.y[p_id];
+
+      float r = std::sqrt(dx * dx + dy * dy + eps * eps);
+      float a = (G * particles.mass[root->body]) / (r * r);
+
+      float ax = a * (dx / r);
+      float ay = a * (dy / r);
+
+      particles.v_x[p_id] += ax * dt;
+      particles.v_y[p_id] += ay * dt;
+      return;
     }
 
-    if (!NW)
-      return;
+    float dx = (root->com_x - particles.x[p_id]);
+    float dy = (root->com_y - particles.y[p_id]);
+    float d = std::sqrt(dx * dx + dy * dy + eps * eps);
 
-    NW->queryRange(Range, in_range, particles);
-    NE->queryRange(Range, in_range, particles);
-    SW->queryRange(Range, in_range, particles);
-    SE->queryRange(Range, in_range, particles);
+    if (root->boundary.width() / d < theta) {
+      float a = (G * root->total_mass) / (d * d);
 
-    return;
+      float ax = a * (dx / d);
+      float ay = a * (dy / d);
+
+      particles.v_x[p_id] += ax * dt;
+      particles.v_y[p_id] += ay * dt;
+    } else {
+      calculate_gravity_BH(root->NW, p_id, particles, theta, G, eps, dt);
+      calculate_gravity_BH(root->NE, p_id, particles, theta, G, eps, dt);
+      calculate_gravity_BH(root->SW, p_id, particles, theta, G, eps, dt);
+      calculate_gravity_BH(root->SE, p_id, particles, theta, G, eps, dt);
+    }
   }
 
   ~QuadTree() {
