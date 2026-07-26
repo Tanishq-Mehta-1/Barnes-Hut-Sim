@@ -1,44 +1,8 @@
+#include "quadtree.h"
 #include <cstdlib>
 #include <iostream>
+#include <random>
 #include <raylib.h>
-
-struct Particles {
-  int num;
-  float *x;
-  float *y;
-
-  float *v_x;
-  float *v_y;
-
-  int *c_r;
-  int *c_g;
-  int *c_b;
-
-  float *size;
-
-  Particles(int n) {
-    num = n;
-    x = new float[n];
-    y = new float[n];
-    v_x = new float[n];
-    v_y = new float[n];
-    c_r = new int[n];
-    c_g = new int[n];
-    c_b = new int[n];
-    size = new float[n];
-  }
-
-  ~Particles() {
-    delete[] x;
-    delete[] y;
-    delete[] v_x;
-    delete[] v_y;
-    delete[] c_r;
-    delete[] c_g;
-    delete[] c_b;
-    delete[] size;
-  }
-};
 
 void checkOut(Particles &p, const int &w, const int &h) {
 
@@ -56,27 +20,54 @@ int main() {
   std::cout << "Hello!";
 
   int num_particles = 1000;
+  const float G = 500.f;
+  const float eps = 10.0f;
   Particles particles(num_particles);
 
-  int width = 1200, height = 800;
+  int width = 1000, height = 1000;
   InitWindow(width, height, "Barnes-Hut Simulation");
 
-  // Init particles
-  for (int i = 0; i < num_particles; i++) {
-    float rand_x = rand() / float(RAND_MAX);
-    float rand_y = rand() / float(RAND_MAX);
+// Init particles
+std::random_device rd;
+std::mt19937 gen(rd()); // High-quality Mersenne Twister RNG
+std::uniform_real_distribution<float> angle_dist(0.0f, 2.0f * PI);
+std::normal_distribution<float> radius_dist(0.0f, std::min(width, height) / 4.0f); // Concentrates particles in the middle
+std::uniform_real_distribution<float> size_dist(1.0f, 2.0f);
+std::normal_distribution<float> vel_noise(0.0f, 5.0f); // Tiny random variance
 
-    particles.x[i] = rand_x * width;
-    particles.y[i] = rand_x * height;
-    particles.v_x[i] = rand_x * 200.f - 100.f;
-    particles.v_y[i] = rand_y * 200.f - 100.f;
+float cx = width / 2.0f;
+float cy = height / 2.0f;
+float base_speed = 30.0f; // Adjust to make the galaxy spin faster or slower
 
-    particles.c_r[i] = rand_x * 255;
-    particles.c_g[i] = (rand_x + rand_y) / 2.0f * 255;
-    particles.c_b[i] = rand_y * 255;
+for (int i = 0; i < num_particles; i++) {
+    // 1. Galaxy-style placement (Gaussian cluster in the center)
+    float r = std::abs(radius_dist(gen));
+    float theta = angle_dist(gen);
 
-    particles.size[i] = (rand() / float(RAND_MAX)) * 5.0f + 2.0f;
-  }
+    particles.x[i] = cx + r * std::cos(theta);
+    particles.y[i] = cy + r * std::sin(theta);
+
+    // 2. Tangential Orbital Velocity (Makes it spin)
+    float dx = particles.x[i] - cx;
+    float dy = particles.y[i] - cy;
+    float dist = std::sqrt(dx * dx + dy * dy) + 0.1f; // Prevent div by zero
+    
+    // Perpendicular vector (-dy, dx) for rotation
+    particles.v_x[i] = (-dy / dist) * base_speed + vel_noise(gen);
+    particles.v_y[i] = (dx / dist) * base_speed + vel_noise(gen);
+
+    // 3. More realistic size and mass (using actual area of a circle)
+    particles.size[i] = size_dist(gen);
+    // Throw in an occasional super-massive particle just for fun
+    if (i % 1000 == 0) particles.size[i] *= 25.0f; 
+    particles.mass[i] = PI * (particles.size[i] * particles.size[i]);
+
+    // 4. Color based on distance from center (Bright core, darker edges)
+    float normalized_dist = std::min(dist / (width / 2.0f), 1.0f);
+    particles.c_r[i] = 255;
+    particles.c_g[i] = 255 * (1.0f - normalized_dist);
+    particles.c_b[i] = 255 * std::max(0.0f, (1.0f - normalized_dist * 2.0f));
+}
 
   while (!WindowShouldClose()) {
 
@@ -87,14 +78,49 @@ int main() {
     BeginDrawing();
     {
       ClearBackground(BLACK);
+
+      QuadTree qt(
+          AABB(width / 2.f, height / 2.f, std::min(width / 2, height / 2)));
       for (int i = 0; i < num_particles; i++) {
+        qt.insert(i, particles);
+      }
+
+      // gravity calc
+      for (int i = 0; i < num_particles; i++) {
+        AABB range(particles.x[i], particles.y[i], particles.size[i] + 400.f);
+        std::vector<int> neighbours;
+
+        qt.queryRange(range, neighbours, particles);
+
+        for (int &neigh : neighbours) {
+          if (neigh == i)
+            continue;
+
+          // collision detection
+
+          // dir vector
+          float dx = particles.x[neigh] - particles.x[i];
+          float dy = particles.y[neigh] - particles.y[i];
+
+          float r = std::sqrt(dx * dx + dy * dy + eps * eps);
+          float a = (G * particles.mass[neigh]) / (r * r);
+
+          float ax = a * (dx / r);
+          float ay = a * (dy / r);
+
+          particles.v_x[i] += ax * dt;
+          particles.v_y[i] += ay * dt;
+        }
+      }
+
+      for (int i = 0; i < num_particles; i++) {
+        particles.x[i] += particles.v_x[i] * dt;
+        particles.y[i] += particles.v_y[i] * dt;
+
         Color pCol = {(unsigned char)particles.c_r[i],
                       (unsigned char)particles.c_g[i],
                       (unsigned char)particles.c_b[i], 122};
         DrawCircle(particles.x[i], particles.y[i], particles.size[i], pCol);
-
-        particles.x[i] += particles.v_x[i] * dt;
-        particles.y[i] += particles.v_y[i] * dt;
       }
 
       checkOut(particles, width, height);

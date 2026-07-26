@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <cstdlib>
 #include <sys/types.h>
 #include <vector>
@@ -16,6 +17,54 @@ struct vec2 {
   vec2() {
     x = 0;
     y = 0;
+  }
+};
+
+struct Particles {
+  int num;
+  float *x;
+  float *y;
+
+  float *v_x;
+  float *v_y;
+
+  int *c_r;
+  int *c_g;
+  int *c_b;
+
+  float *size;
+  float *mass;
+
+  Particles(int n) {
+    num = n;
+    x = new float[n];
+    y = new float[n];
+    v_x = new float[n];
+    v_y = new float[n];
+    c_r = new int[n];
+    c_g = new int[n];
+    c_b = new int[n];
+    size = new float[n];
+    mass = new float[n];
+  }
+
+  vec2 pos(int id) const { return vec2(this->x[id], this->y[id]); }
+
+  float dist(int id1, int id2) {
+    return sqrt((x[id1] - x[id2]) * (x[id1] - x[id2]) +
+                (y[id1] - y[id2]) * (y[id1] - y[id2]));
+  }
+
+  ~Particles() {
+    delete[] x;
+    delete[] y;
+    delete[] v_x;
+    delete[] v_y;
+    delete[] c_r;
+    delete[] c_g;
+    delete[] c_b;
+    delete[] size;
+    delete[] mass;
   }
 };
 
@@ -53,16 +102,14 @@ struct QuadTree {
   AABB boundary;
 
   int size = 0;
-  vec2 points[node_capacity];
+  int points[node_capacity]; // stores id of the particles
 
   QuadTree *NW;
   QuadTree *NE;
   QuadTree *SW;
   QuadTree *SE;
 
-  QuadTree(AABB boundary_): QuadTree() {
-    boundary = boundary_;
-  }
+  QuadTree(AABB boundary_) : QuadTree() { boundary = boundary_; }
 
   QuadTree() {
     NW = nullptr;
@@ -71,13 +118,14 @@ struct QuadTree {
     SE = nullptr;
   }
 
-  bool insert(vec2 p) {
+  bool insert(int p_id, Particles &particles) {
 
+    vec2 p = {particles.x[p_id], particles.y[p_id]};
     if (!boundary.containsPoint(p))
       return false;
 
     if (size < node_capacity && NW == nullptr) {
-      points[size++] = p;
+      points[size++] = p_id;
       return true;
     }
 
@@ -85,7 +133,8 @@ struct QuadTree {
       subdivide();
     }
 
-    return NW->insert(p) || NE->insert(p) || SW->insert(p) || SE->insert(p);
+    return NW->insert(p_id, particles) || NE->insert(p_id, particles) ||
+           SW->insert(p_id, particles) || SE->insert(p_id, particles);
   }
 
   void subdivide() {
@@ -97,13 +146,14 @@ struct QuadTree {
     SE = new QuadTree(AABB(center.x + new_h, center.y + new_h, new_h));
   }
 
-  void queryRange(AABB Range, std::vector<vec2> &in_range) {
+  void queryRange(AABB Range, std::vector<int> &in_range,
+                  const Particles &particles) {
 
     if (!boundary.intersectsAABB(Range))
       return;
 
     for (int i = 0; i < size; i++) {
-      if (Range.containsPoint(points[i])) {
+      if (Range.containsPoint(vec2(particles.pos(points[i])))) {
         in_range.push_back(points[i]);
       }
     }
@@ -111,10 +161,10 @@ struct QuadTree {
     if (!NW)
       return;
 
-    NW->queryRange(Range, in_range);
-    NE->queryRange(Range, in_range);
-    SW->queryRange(Range, in_range);
-    SE->queryRange(Range, in_range);
+    NW->queryRange(Range, in_range, particles);
+    NE->queryRange(Range, in_range, particles);
+    SW->queryRange(Range, in_range, particles);
+    SE->queryRange(Range, in_range, particles);
 
     return;
   }
