@@ -19,12 +19,12 @@ int main() {
   std::cout << "Hello!";
 
   int num_particles = 10000;
-  const float G = 100.f;
-  const float eps = 50.0f;
-  const float theta = 0.5f;
+  const float G = 200.f;
+  const float eps = 10.0f;
+  const float theta = 1.2f;
   Particles particles(num_particles);
 
-  int width = 1920, height = 1080;
+  int width = 2500, height = 1400;
   InitWindow(width, height, "Barnes-Hut Simulation");
 
   // Init particles
@@ -35,7 +35,7 @@ int main() {
   std::uniform_real_distribution<float> dist_x(0.0f, width);
   std::uniform_real_distribution<float> dist_y(0.0f, height);
   std::uniform_real_distribution<float> dist_v(-2.0f, 2.0f);
-  std::uniform_real_distribution<float> size_dist(1.0f, 1.5f);
+  std::uniform_real_distribution<float> size_dist(1.0f, 2.0f);
 
   for (int i = 0; i < num_particles; i++) {
     // 1. Random placement across the whole screen
@@ -48,16 +48,25 @@ int main() {
 
     // 3. Size and mass
     particles.size[i] = size_dist(gen);
-    if (i % 5000 == 0) {
-      particles.size[i] *= 4.0f; // occasional massive particle
+    if (i % 2000 == 0) {
+      particles.size[i] *= 2.0f; // occasional massive particle
     }
     particles.mass[i] = PI * (particles.size[i] * particles.size[i]);
 
-    // 4. Solid color (white) since they are no longer clustered at the center
-    particles.c_r[i] = (particles.size[i] / 6.0f) * 255;
-    particles.c_g[i] = particles.c_r[i];
-    particles.c_b[i] = particles.c_r[i];
-    particles.c_a[i] = std::max(particles.c_r[i], 170);
+    if (i % 2000 == 0) {
+      particles.c_r[i] = 255;
+      particles.c_g[i] = 255;
+      particles.c_b[i] = 255;
+      particles.c_a[i] = 255;
+    } else {
+      float norm = std::min(particles.size[i] / 2.0f, 1.0f);
+
+      particles.c_r[i] = norm * 255;
+      particles.c_g[i] = norm * 50; 
+      particles.c_b[i] = (1.0f - norm) * 255;
+
+      particles.c_a[i] = 255;
+    }
   }
 
   while (!WindowShouldClose()) {
@@ -70,8 +79,7 @@ int main() {
     {
       ClearBackground(BLACK);
 
-      QuadTree qt(
-          AABB(width / 2.f, height / 2.f, std::min(width / 2, height / 2)));
+      QuadTree qt(AABB(width / 2.f, height / 2.f, width * 5));
       for (int i = 0; i < num_particles; i++) {
         qt.insert(i, particles);
       }
@@ -89,8 +97,6 @@ int main() {
             (unsigned char)particles.c_b[i], (unsigned char)particles.c_a[i]};
         DrawCircle(particles.x[i], particles.y[i], particles.size[i], pCol);
       }
-
-      checkOut(particles, width, height);
     }
     EndDrawing();
   }
