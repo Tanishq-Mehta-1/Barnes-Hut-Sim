@@ -1,5 +1,6 @@
-sim: barnes.cpp 
-		g++ -w -O3 barnes.cpp -o sim -lraylib
+CXX = hipcc
+CXXFLAGS = -w -O3 --offload-arch=gfx1012
+LDFLAGS = -lraylib
 
-q_tree: quadtree.cpp	
-		g++ -w -O3 quadtree.cpp -o q_tree
+sim: barnes.cpp 
+		$(CXX) $(CXXFLAGS) barnes.cpp -o sim $(LDFLAGS)

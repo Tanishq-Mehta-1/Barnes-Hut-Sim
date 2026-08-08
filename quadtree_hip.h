@@ -1,10 +1,10 @@
 #pragma once
 
-#include <algorithm>
 #include <cmath>
 #include <cstdlib>
+#include <hip/amd_detail/amd_hip_runtime.h>
+#include <hip/hip_runtime.h>
 #include <sys/types.h>
-#include <vector>
 
 struct vec2 {
   float x;
@@ -18,57 +18,6 @@ struct vec2 {
   vec2() {
     x = 0;
     y = 0;
-  }
-};
-
-struct Particles {
-  int num;
-  float *x;
-  float *y;
-
-  float *v_x;
-  float *v_y;
-
-  int *c_r;
-  int *c_g;
-  int *c_b;
-  int *c_a;
-
-  float *size;
-  float *mass;
-
-  Particles(int n) {
-    num = n;
-    x = new float[n];
-    y = new float[n];
-    v_x = new float[n];
-    v_y = new float[n];
-    c_r = new int[n];
-    c_g = new int[n];
-    c_b = new int[n];
-    c_a = new int[n];
-    size = new float[n];
-    mass = new float[n];
-  }
-
-  vec2 pos(int id) const { return vec2(this->x[id], this->y[id]); }
-
-  float dist(int id1, int id2) {
-    return sqrt((x[id1] - x[id2]) * (x[id1] - x[id2]) +
-                (y[id1] - y[id2]) * (y[id1] - y[id2]));
-  }
-
-  ~Particles() {
-    delete[] x;
-    delete[] y;
-    delete[] v_x;
-    delete[] v_y;
-    delete[] c_r;
-    delete[] c_g;
-    delete[] c_b;
-    delete[] c_a;
-    delete[] size;
-    delete[] mass;
   }
 };
 
@@ -99,6 +48,74 @@ struct AABB {
     return (std::abs(center.x - other.center.x) <= (halfDim + other.halfDim) &&
             std::abs(center.y - other.center.y) <= (halfDim + other.halfDim));
   }
+};
+
+struct Particles {
+  int num;
+  float *__restrict__ x;
+  float *__restrict__ y;
+
+  float *__restrict__ v_x;
+  float *__restrict__ v_y;
+
+  int *__restrict__ c_r;
+  int *__restrict__ c_g;
+  int *__restrict__ c_b;
+  int *__restrict__ c_a;
+
+  float *__restrict__ size;
+  float *__restrict__ mass;
+ 
+  
+ Particles(int n) {
+    num = n;
+    
+    hipMallocManaged((float**)&x, n * sizeof(float));
+    hipMallocManaged((float**)&y, n * sizeof(float));
+    hipMallocManaged((float**)&v_x, n * sizeof(float));
+    hipMallocManaged((float**)&v_y, n * sizeof(float));
+    
+    hipMallocManaged((int**)&c_r, n * sizeof(int));
+    hipMallocManaged((int**)&c_g, n * sizeof(int));
+    hipMallocManaged((int**)&c_b, n * sizeof(int));
+    hipMallocManaged((int**)&c_a, n * sizeof(int));
+    
+    hipMallocManaged((float**)&size, n * sizeof(float));
+    hipMallocManaged((float**)&mass, n * sizeof(float));
+  }
+
+  vec2 pos(int id) const { return vec2(this->x[id], this->y[id]); }
+
+  float dist(int id1, int id2) {
+    return sqrt((x[id1] - x[id2]) * (x[id1] - x[id2]) +
+                (y[id1] - y[id2]) * (y[id1] - y[id2]));
+  }
+
+  ~Particles() {
+    hipFree(x);
+    hipFree(y);
+    hipFree(v_x);
+    hipFree(v_y);
+    hipFree(c_r);
+    hipFree(c_g);
+    hipFree(c_b);
+    hipFree(c_a);
+    hipFree(size);
+    hipFree(mass);
+  }
+};
+
+struct QuadTreeNode {
+  AABB boundary;
+  int body = -1;
+  float total_mass = 0.f;
+  float com_x = 0.f;
+  float com_y = 0.f;
+
+  int NW = -1;
+  int NE = -1;
+  int SW = -1;
+  int SE = -1;
 };
 
 struct QuadTree {
@@ -211,6 +228,23 @@ struct QuadTree {
     }
   }
 
+  int flatten(QuadTreeNode* nodes, int& curr_idx) {
+    int my_idx = curr_idx++;
+
+    nodes[my_idx].boundary = boundary;
+    nodes[my_idx].body = body;
+    nodes[my_idx].total_mass= total_mass;
+    nodes[my_idx].com_x = com_y;
+    nodes[my_idx].com_y = com_x;
+
+    nodes[my_idx].NW = (NW != nullptr) ? NW->flatten(nodes, curr_idx) : -1;
+    nodes[my_idx].NE = (NE != nullptr) ? NE->flatten(nodes, curr_idx) : -1;
+    nodes[my_idx].SW = (SW != nullptr) ? SW->flatten(nodes, curr_idx) : -1;
+    nodes[my_idx].SE = (SE != nullptr) ? SE->flatten(nodes, curr_idx) : -1;
+
+    return my_idx;
+  }
+
   ~QuadTree() {
     delete NW;
     delete NE;
@@ -218,3 +252,68 @@ struct QuadTree {
     delete SE;
   }
 };
+
+__global__ void calculate_gravity_BH_kernel(int num_particles,
+                                            QuadTreeNode *nodes, float *x,
+                                            float *y, float *v_x, float *v_y,
+                                            float *mass, float theta, float G,
+                                            float eps, float dt) {
+  int p_id = blockIdx.x * blockDim.x + threadIdx.x;
+  if (p_id >= num_particles)
+    return;
+
+  int stack[64];
+  int stack_idx = 0;
+
+  stack[stack_idx++] = 0;
+
+  float px = x[p_id];
+  float py = y[p_id];
+  float ax = 0.f, ay = 0.f;
+
+  while (stack_idx > 0) {
+    int node_idx = stack[--stack_idx];
+    QuadTreeNode node = nodes[node_idx];
+
+    if (node.total_mass == 0)
+      continue;
+
+    // leaf node
+    if (node.body != -1) {
+      if (p_id != node.body) {
+        float dx = x[node.body] - px;
+        float dy = y[node.body] - py;
+        float dist_sq = dx * dx + dy * dy;
+        float r = sqrt(dist_sq + eps * eps);
+
+        float a = (G * mass[node.body]) / (r * r);
+        ax += a * (dx / r);
+        ay += a * (dy / r);
+      }
+    } else {
+      float dx = node.com_x - px;
+      float dy = node.com_y - py;
+      float dist_sq = dx * dx + dy * dy;
+      float d = sqrt(dist_sq + eps * eps);
+      float width = node.boundary.halfDim * 2.0f;
+
+      if (width / d < theta) {
+        float a = (G * node.total_mass) / (d * d);
+        ax += a * (dx / d);
+        ay += a * (dy / d);
+      } else {
+        if (node.NW != -1)
+          stack[stack_idx++] = node.NW;
+        if (node.NE != -1)
+          stack[stack_idx++] = node.NE;
+        if (node.SW != -1)
+          stack[stack_idx++] = node.SW;
+        if (node.SE != -1)
+          stack[stack_idx++] = node.SE;
+      }
+    }
+  }
+
+  v_x[p_id] += ax * dt;
+  v_y[p_id] += ay * dt;
+}

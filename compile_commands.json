@@ -1,0 +1,23 @@
+[
+  {
+    "file": "barnes.cpp",
+    "arguments": [
+      "/opt/rocm/lib/llvm/bin/clang++",
+      "--offload-arch=gfx1012",
+      "--driver-mode=g++",
+      "-w",
+      "-O3",
+      "-x",
+      "hip",
+      "barnes.cpp",
+      "-o",
+      "sim",
+      "-isystem",
+      "/opt/rocm/include",
+      "-isystem",
+      "/opt/rocm/include"
+    ],
+    "directory": "/home/deo3d2y/Desktop/Dev/C++/Barnes-Hut",
+    "output": "sim"
+  }
+]
