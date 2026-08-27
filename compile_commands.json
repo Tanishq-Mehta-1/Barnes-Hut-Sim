@@ -1,23 +1,29 @@
 [
   {
-    "file": "barnes.cpp",
+    "directory": "/home/deo3d2y/Desktop/Dev/C++/Barnes-Hut/src",
     "arguments": [
-      "/opt/rocm/lib/llvm/bin/clang++",
-      "--offload-arch=gfx1012",
-      "--driver-mode=g++",
-      "-w",
-      "-O3",
-      "-x",
-      "hip",
-      "barnes.cpp",
-      "-o",
-      "sim",
-      "-isystem",
-      "/opt/rocm/include",
-      "-isystem",
-      "/opt/rocm/include"
+      "/opt/rocm/lib/llvm/bin/clang++", "--offload-arch=gfx1012", "--driver-mode=g++",
+      "-w", "-O3", "-x", "hip", "kernels.h", "-o", "barnes",
+      "-isystem", "/opt/rocm/include"
     ],
-    "directory": "/home/deo3d2y/Desktop/Dev/C++/Barnes-Hut",
-    "output": "sim"
+    "file": "kernels.h"
+  },
+  {
+    "directory": "/home/deo3d2y/Desktop/Dev/C++/Barnes-Hut/src",
+    "arguments": [
+      "/opt/rocm/lib/llvm/bin/clang++", "--offload-arch=gfx1012", "--driver-mode=g++",
+      "-w", "-O3", "-x", "hip", "kernel1.cpp", "-o", "barnes",
+      "-isystem", "/opt/rocm/include"
+    ],
+    "file": "kernel1.cpp"
+  },
+  {
+    "directory": "/home/deo3d2y/Desktop/Dev/C++/Barnes-Hut/src",
+    "arguments": [
+      "/opt/rocm/lib/llvm/bin/clang++", "--offload-arch=gfx1012", "--driver-mode=g++",
+      "-w", "-O3", "-x", "hip", "bh_cpu.cpp", "-o", "barnes",
+      "-isystem", "/opt/rocm/include"
+    ],
+    "file": "bh_cpu.cpp"
   }
 ]
