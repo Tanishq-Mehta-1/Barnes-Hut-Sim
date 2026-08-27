@@ -1,6 +1,6 @@
 [
   {
-    "file": "barnes.cpp",
+    "file": "src/barnes.cpp",
     "arguments": [
       "/opt/rocm/lib/llvm/bin/clang++",
       "--offload-arch=gfx1012",
@@ -9,7 +9,7 @@
       "-O3",
       "-x",
       "hip",
-      "barnes.cpp",
+      "src/barnes.cpp",
       "-o",
       "sim",
       "-isystem",
