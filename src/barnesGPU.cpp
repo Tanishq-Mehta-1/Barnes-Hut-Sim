@@ -1,24 +1,8 @@
 #include "quadtree_hip.h"
-#include <hip/amd_detail/amd_hip_runtime.h>
-#include <iostream>
 #include <random>
 #include <raylib.h>
 
-void checkOut(Particles &p, const int &w, const int &h) {
-
-  int n = p.num;
-  for (int i = 0; i < n; i++) {
-    if (p.x[i] + p.size[i] >= w || p.x[i] - p.size[i] <= 0)
-      p.v_x[i] *= -1;
-
-    if (p.y[i] + p.size[i] >= h || p.y[i] - p.size[i] <= 0)
-      p.v_y[i] *= -1;
-  }
-}
-
 int main() {
-  std::cout << "Hello!";
-
   int num_particles = 10000;
   const float G = 200.f;
   const float eps = 10.0f;

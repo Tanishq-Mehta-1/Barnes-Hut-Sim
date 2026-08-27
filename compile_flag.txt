@@ -1,4 +1,0 @@
--I/opt/rocm/include
--x
-hip
---offload-arch=gfx1012
